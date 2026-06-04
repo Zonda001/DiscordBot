@@ -122,13 +122,21 @@ border-radius:11px;padding:8px 10px}
 .qrow .qa{display:flex;gap:4px;flex:none}
 .empty{color:var(--muted);text-align:center;padding:26px;font-size:14px}
 .foot{text-align:center;color:#56607a;font-size:12px;margin:22px 0 8px}
-@media(max-width:560px){.now{flex-direction:column}.art{width:100%;height:150px}.vol{margin-left:0}}
+.libtarget{margin-bottom:12px;color:var(--muted);font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.libgrid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.favuser{margin-bottom:12px}
+.favhead{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13px;color:#cdd5e3;margin:8px 0 5px}
+.favhead .btn{margin-left:auto}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+@media(max-width:560px){.now{flex-direction:column}.art{width:100%;height:150px}.vol{margin-left:0}
+ .libgrid{grid-template-columns:1fr}}
 </style></head><body>
 <div class="wrap">
  <div class="top"><span id="dot" class="dot"></span>
   <div><div class="brand" id="brand">Bot Dashboard</div><div class="meta" id="meta">під'єднання…</div></div>
   <button class="logout" onclick="logout()">Вийти</button></div>
  <div id="players"></div>
+ <div id="library"></div>
  <div class="foot">оновлюється автоматично • керування у процесі бота</div>
 </div>
 <script>
@@ -208,6 +216,46 @@ function card(p){
  </div>`;
 }
 
+// --- бібліотека: плейлисти та обране ---
+function target(){const el=document.getElementById('target');return el?el.value:null;}
+async function lib(payload){await api('/api/control',{method:'POST',
+ headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});refresh();}
+function plLoad(uid,btn){const g=target();if(!g)return;
+ lib({action:'pl_load',guild_id:g,user_id:uid,name:decodeURIComponent(btn.dataset.name)});}
+function plDelete(uid,btn){const name=decodeURIComponent(btn.dataset.name);
+ if(!confirm('Видалити плейлист «'+name+'»?'))return;lib({action:'pl_delete',user_id:uid,name});}
+function favPlay(uid,idx){const g=target();if(!g)return;lib({action:'fav_play',guild_id:g,user_id:uid,value:idx});}
+function favRemove(uid,idx){lib({action:'fav_remove',user_id:uid,value:idx});}
+
+function libCard(s){
+ const players=s.players||[],pls=s.playlists||[],favs=s.favorites||[];
+ const noTarget=players.length===0;
+ const head=noTarget
+  ? `<div class="meta" style="margin-bottom:12px">⚠️ Бот не в голосовому каналі — завантаження в чергу недоступне (приєднай бота та постав трек).</div>`
+  : `<div class="libtarget">Завантажувати в чергу: <select id="target">${players.map(p=>`<option value="${p.guild_id}">${esc(p.guild)}</option>`).join('')}</select></div>`;
+ const dis=noTarget?'disabled':'';
+ const plRows=pls.length?pls.map(p=>`<div class="qrow">
+   <span class="qt">📂 ${esc(p.name)} <span class="qd">· ${p.count} тр. · ${esc(p.user)}</span></span>
+   <span class="qa">
+    <button class="btn sm" ${dis} title="У чергу" data-name="${encodeURIComponent(p.name)}" onclick="plLoad('${p.user_id}',this)">▶</button>
+    <button class="btn sm danger" title="Видалити" data-name="${encodeURIComponent(p.name)}" onclick="plDelete('${p.user_id}',this)">🗑</button>
+   </span></div>`).join(''):'<div class="empty">Немає збережених плейлистів</div>';
+ const favBlocks=favs.length?favs.map(f=>`<div class="favuser">
+   <div class="favhead">⭐ ${esc(f.user)} <span class="qd">(${f.count})</span>
+    <button class="btn sm" ${dis} onclick="favPlay('${f.user_id}','')">▶ Грати все</button></div>
+   ${f.tracks.map((t,i)=>`<div class="qrow"><span class="idx">${i+1}</span>
+     <span class="qt">${esc(t.title)}</span>
+     <span class="qa">
+      <button class="btn sm" ${dis} title="У чергу" onclick="favPlay('${f.user_id}',${i})">▶</button>
+      <button class="btn sm danger" title="Прибрати" onclick="favRemove('${f.user_id}',${i})">🗑</button>
+     </span></div>`).join('')}</div>`).join(''):'<div class="empty">Ні в кого немає обраного</div>';
+ return `<div class="card"><div class="gname">🗂️ Бібліотека</div>${head}
+  <div class="libgrid">
+   <div><div class="qhead">📂 Плейлисти <span class="qn">(${pls.length})</span></div><div class="qlist">${plRows}</div></div>
+   <div><div class="qhead">⭐ Обране <span class="qn">(${favs.length})</span></div><div class="qlist">${favBlocks}</div></div>
+  </div></div>`;
+}
+
 async function refresh(){
  let r=await api('/api/status');if(!r||!r.ok)return;let s=await r.json();
  FILTERS=s.filters||[];
@@ -215,10 +263,17 @@ async function refresh(){
  document.getElementById('brand').textContent=s.user||'Bot Dashboard';
  document.getElementById('meta').textContent=(s.online?'онлайн':'офлайн')+' • '+s.guild_count+' серв.';
  const box=document.getElementById('players');
- if(!s.players.length){box.innerHTML='<div class="card empty">Бот зараз не грає на жодному сервері.<br>Приєднай його до голосового каналу та постав трек.</div>';last={};return;}
- box.innerHTML=s.players.map(card).join('');
- last={};
- for(const p of s.players)last[p.guild_id]={pos:p.position,dur:p.duration,playing:p.playing,paused:p.paused,ts:Date.now()};
+ if(!s.players.length){box.innerHTML='<div class="card empty">Бот зараз не грає на жодному сервері.<br>Приєднай його до голосового каналу та постав трек.</div>';last={};}
+ else{
+  box.innerHTML=s.players.map(card).join('');
+  last={};
+  for(const p of s.players)last[p.guild_id]={pos:p.position,dur:p.duration,playing:p.playing,paused:p.paused,ts:Date.now()};
+ }
+ // бібліотека — рендеримо завжди; зберігаємо вибір цільового сервера
+ const savedTarget=(document.getElementById('target')||{}).value;
+ document.getElementById('library').innerHTML=libCard(s);
+ const tsel=document.getElementById('target');
+ if(tsel&&savedTarget&&[...tsel.options].some(o=>o.value===savedTarget))tsel.value=savedTarget;
 }
 // плавний локальний тік прогресу між опитуваннями
 function tick(){
@@ -303,6 +358,13 @@ class DashboardCog(commands.Cog, name="Дашборд"):
 
     # ---- api ----
 
+    def _uname(self, uid) -> str:
+        try:
+            u = self.bot.get_user(int(uid))
+        except (TypeError, ValueError):
+            u = None
+        return u.display_name if u else f"ID {uid}"
+
     def _status(self) -> dict:
         music = self.bot.get_cog("Музика")
         players = []
@@ -341,12 +403,34 @@ class DashboardCog(commands.Cog, name="Дашборд"):
                         "queue_len": len(p.queue),
                     }
                 )
+        playlists = []
+        favorites = []
+        if music:
+            for uid, pls in getattr(music.playlists, "data", {}).items():
+                uname = self._uname(uid)
+                for name, tracks in pls.items():
+                    playlists.append(
+                        {"user_id": str(uid), "user": uname, "name": name, "count": len(tracks)}
+                    )
+            for uid, items in getattr(music.favorites, "data", {}).items():
+                if not items:
+                    continue
+                favorites.append(
+                    {
+                        "user_id": str(uid),
+                        "user": self._uname(uid),
+                        "count": len(items),
+                        "tracks": [{"title": t.get("title", "?")} for t in items[:50]],
+                    }
+                )
         return {
             "online": self.bot.is_ready(),
             "user": str(self.bot.user) if self.bot.user else None,
             "guild_count": len(self.bot.guilds),
             "filters": list(AUDIO_FILTERS.keys()),
             "players": players,
+            "playlists": playlists,
+            "favorites": favorites,
         }
 
     async def api_status(self, request):
@@ -359,6 +443,24 @@ class DashboardCog(commands.Cog, name="Дашборд"):
             return web.json_response({"error": "unauthorized"}, status=401)
         body = await request.json()
         action = body.get("action")
+        music = self.bot.get_cog("Музика")
+        if music is None:
+            return web.json_response({"error": "музичний cog недоступний"}, status=400)
+
+        # --- бібліотека: керування без активного плеєра ---
+        if action == "pl_delete":
+            ok = music.playlists.delete(str(body.get("user_id")), str(body.get("name", "")))
+            return web.json_response({"ok": ok}, status=200 if ok else 404)
+        if action == "fav_remove":
+            try:
+                i = int(body.get("value"))
+            except (TypeError, ValueError):
+                return web.json_response({"error": "bad index"}, status=400)
+            removed = music.favorites.remove(str(body.get("user_id")), i + 1)  # store 1-based
+            if not removed:
+                return web.json_response({"error": "bad index"}, status=400)
+            return web.json_response({"ok": True})
+
         try:
             gid = int(body.get("guild_id"))
         except (TypeError, ValueError):
@@ -366,13 +468,13 @@ class DashboardCog(commands.Cog, name="Дашборд"):
 
         guild = self.bot.get_guild(gid)
         vc = guild.voice_client if guild else None
-        music = self.bot.get_cog("Музика")
-        player = music.players.get(gid) if music else None
+        player = music.players.get(gid)
         if player is None:
             return web.json_response({"error": "немає активного плеєра"}, status=400)
 
-        # дії транспорту потребують голосового підключення
-        if action in ("pause", "resume", "skip", "stop", "seek", "jump") and not vc:
+        # дії транспорту/завантаження потребують голосового підключення
+        if action in ("pause", "resume", "skip", "stop", "seek", "jump",
+                      "pl_load", "fav_play") and not vc:
             return web.json_response({"error": "бот не в голосовому каналі"}, status=400)
 
         q = player.queue
@@ -464,6 +566,33 @@ class DashboardCog(commands.Cog, name="Дашборд"):
             except (TypeError, ValueError):
                 return web.json_response({"error": "bad value"}, status=400)
             player.restart_current(seek=seconds)
+        elif action == "pl_load":
+            tracks = music.playlists.get(str(body.get("user_id")), str(body.get("name", "")))
+            if not tracks:
+                return web.json_response({"error": "плейлист не знайдено"}, status=404)
+            for t in tracks:
+                q.append({"url": t["url"], "title": t.get("title", "?"), "duration": 0})
+            if not vc.is_playing() and not player.is_loading:
+                player.next_event.set()
+        elif action == "fav_play":
+            items = music.favorites.get(str(body.get("user_id")))
+            if not items:
+                return web.json_response({"error": "обране порожнє"}, status=400)
+            v = body.get("value")
+            if v in (None, ""):
+                chosen = items
+            else:
+                try:
+                    i = int(v)
+                except (TypeError, ValueError):
+                    return web.json_response({"error": "bad index"}, status=400)
+                if not (0 <= i < len(items)):
+                    return web.json_response({"error": "bad index"}, status=400)
+                chosen = [items[i]]
+            for t in chosen:
+                q.append({"url": t["url"], "title": t.get("title", "?"), "duration": 0})
+            if not vc.is_playing() and not player.is_loading:
+                player.next_event.set()
         else:
             return web.json_response({"error": "unknown action"}, status=400)
 
