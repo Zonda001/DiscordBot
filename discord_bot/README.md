@@ -106,7 +106,8 @@ Start-Process deploy\run_24_7.bat -WindowStyle Minimized
 ```
 
 > ⚠️ ПК має бути увімкнений і користувач — у системі. Для справжнього
-> always-on без залежності від твого ПК — краще VPS/Docker.
+> always-on без залежності від твого ПК — **Docker на VPS**: див. `deploy/DOCKER.md`
+> (готові `Dockerfile` + `docker-compose.yml`, `docker compose up -d --build`).
 > Не запускай бот двічі (ярлик + вручну) — буде два інстанси.
 
 ## Desktop-панель (tkinter)

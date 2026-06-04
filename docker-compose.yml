@@ -1,0 +1,20 @@
+# Незалежний always-on запуск бота через Docker.
+#   docker compose up -d --build      # старт у фоні
+#   docker compose logs -f            # дивитися логи
+#   docker compose down               # зупинити
+services:
+  bot:
+    build: .
+    image: discord-bot
+    container_name: discord-bot
+    restart: unless-stopped          # сам перезапускається при падінні/ребуті VPS
+    env_file: .env                   # секрети та налаштування з .env (в образ не зашиті)
+    volumes:
+      # персист runtime-даних (обране, плейлисти, налаштування, лог)
+      - ./discord_bot/data:/app/discord_bot/data
+      # cookies для yt-dlp — розкоментуй, якщо використовуєш:
+      # - ./cookies.txt:/app/cookies.txt:ro
+    # Веб-дашборд: за замовчуванням слухає 127.0.0.1 (всередині контейнера = недоступний ззовні).
+    # Щоб відкрити — у .env постав DASHBOARD_HOST=0.0.0.0, розкоментуй порт і став ЗА тунелем/HTTPS.
+    # ports:
+    #   - "127.0.0.1:8765:8765"

@@ -1,0 +1,30 @@
+# Контекст збірки: лишаємо тільки потрібне для образу бота.
+.git/
+.github/
+.idea/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Секрети та runtime-дані — НІКОЛИ в образ
+.env
+cookies.txt
+*.session
+discord_bot/data/
+
+# Не потрібне в образі бота
+panel/
+deploy/
+specs/
+build_gui/
+dist_gui/
+tests/
+*.md
+img.png
+
+# Непов'язані Minecraft-утиліти
+KolyaBeta.py
+Mine.py
+MinecraftAutoCmd_GUI.py
+build_GUI_exe.py
