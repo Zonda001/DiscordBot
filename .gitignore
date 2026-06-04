@@ -26,3 +26,6 @@ specs/app_icon.ico
 
 # --- Випадкові скриншоти/нотатки в корені ---
 img.png
+
+# --- Локальний Docker-оверайд (машинно-специфічний) ---
+docker-compose.override.yml
