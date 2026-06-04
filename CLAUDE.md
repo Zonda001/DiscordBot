@@ -19,13 +19,14 @@ discord_bot/
   config.py        завантаження .env, validate(), _int_env()
   settings.py      GuildSettingsStore (пер-серверні налаштування) + singleton `settings`
   cogs/
-    music.py       плеєр, черга, фільтри, lyrics, обране, View-кнопки
+    music.py       плеєр, черга, фільтри, lyrics, обране, View-кнопки, DJ-роль/vote-skip
     moderation.py  кікер (targets у data/targets.json)
     admin.py       нікнейми
     help.py        hybrid /help ембедом
     status.py      пише data/status.json для desktop-панелі
     dashboard.py   aiohttp веб-дашборд у процесі бота (вмик. через DASHBOARD_PASSWORD)
-  spotify.py       резолв Spotify-посилань (aiohttp, client-credentials)
+  spotify.py       резолв Spotify-посилань (aiohttp, client-credentials; з 11.02.2026
+                   ключі Web API лише для Premium-акаунтів)
   playlists.py     PlaylistStore (іменовані плейлисти, per-user)
   data/            runtime JSON (favorites, targets, guild_settings, status, playlists),
                    bot.log, bot.lock — gitignored

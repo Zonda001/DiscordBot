@@ -33,7 +33,7 @@ COOKIES_FROM_BROWSER = os.getenv("COOKIES_FROM_BROWSER", "").strip() or None
 # Фільтр за замовчуванням для нових плеєрів (off/normalize/bassboost/...)
 DEFAULT_FILTER = os.getenv("DEFAULT_FILTER", "normalize").strip().lower() or "off"
 
-# Spotify Web API (безкоштовно: https://developer.spotify.com/dashboard)
+# Spotify Web API (https://developer.spotify.com/dashboard; з 11.02.2026 ключі лише для Premium)
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID", "").strip()
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "").strip()
 
