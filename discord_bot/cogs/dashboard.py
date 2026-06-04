@@ -108,7 +108,17 @@ class DashboardCog(commands.Cog, name="Дашборд"):
         self._runner = web.AppRunner(app)
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, config.DASHBOARD_HOST, config.DASHBOARD_PORT)
-        await self._site.start()
+        try:
+            await self._site.start()
+        except OSError as e:
+            # Порт зайнятий (інший інстанс/сервіс) — не валимо бота, лише вимикаємо дашборд.
+            log.warning(
+                "Дашборд не запущено: порт %s:%d зайнятий (%s). Бот працює без дашборда.",
+                config.DASHBOARD_HOST, config.DASHBOARD_PORT, e,
+            )
+            await self._runner.cleanup()
+            self._runner = self._site = None
+            return
         log.info("Дашборд: http://%s:%d", config.DASHBOARD_HOST, config.DASHBOARD_PORT)
 
     def cog_unload(self):

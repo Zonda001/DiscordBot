@@ -10,6 +10,7 @@
 import asyncio
 import json
 import logging
+import math
 import random
 import re
 import time
@@ -22,6 +23,25 @@ from discord_bot import config
 from discord_bot.playlists import PlaylistStore
 from discord_bot.settings import settings
 from discord_bot.spotify import is_spotify_url, spotify
+
+
+def member_is_dj(member, dj_role_id) -> bool:
+    """Чи може учасник вільно керувати музикою.
+
+    True, якщо DJ-роль не задана (керують усі), або в учасника є право
+    administrator, або він має саме цю роль. Чиста функція — тестовна.
+    """
+    if not dj_role_id:
+        return True
+    perms = getattr(member, "guild_permissions", None)
+    if perms is not None and getattr(perms, "administrator", False):
+        return True
+    return any(getattr(r, "id", None) == dj_role_id for r in getattr(member, "roles", []))
+
+
+def votes_needed(listeners: int) -> int:
+    """Скільки голосів треба для скіпу: більшість слухачів (не менше 1)."""
+    return max(1, math.ceil(listeners / 2))
 
 
 def _youtube_id(url: str):
@@ -279,6 +299,7 @@ class MusicPlayer:
         self.loop_song = False
         self.loop_queue = False
         self.is_loading = False
+        self.skip_votes: set[int] = set()        # id тих, хто проголосував за скіп
 
         # активний -af фільтр (за замовчуванням з config.DEFAULT_FILTER)
         self.audio_filter: str | None = AUDIO_FILTERS.get(config.DEFAULT_FILTER)
@@ -341,6 +362,7 @@ class MusicPlayer:
                 )
                 source.volume = self.volume
                 voice.play(source, after=self.play_next)
+                self.skip_votes.clear()  # новий трек — голоси за скіп скидаються
 
                 # старт відліку позиції
                 self._seek_offset = seek or 0
@@ -440,6 +462,7 @@ class MusicPlayer:
     def destroy(self):
         """Зупиняє плеєр і чистить ресурси."""
         self.queue.clear()
+        self.skip_votes.clear()
         self.current = None
         if self._task and not self._task.done():
             self._task.cancel()
@@ -541,8 +564,14 @@ class NowPlayingView(discord.ui.View):
     @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.secondary)
     async def skip_btn(self, interaction, button):
         _, voice = self._pv(interaction)
-        if voice and (voice.is_playing() or voice.is_paused()):
-            voice.stop()
+        if not (voice and (voice.is_playing() or voice.is_paused())):
+            return await interaction.response.send_message(
+                "❌ Нічого не відтворюється.", ephemeral=True
+            )
+        did_skip, msg = self.cog._try_skip(interaction.guild, voice, interaction.user)
+        if not did_skip:
+            return await interaction.response.send_message(msg, ephemeral=True)
+        voice.stop()
         await interaction.response.defer()
         await asyncio.sleep(1.5)  # дати player_loop підвантажити наступний трек
         player, voice = self._pv(interaction)
@@ -933,18 +962,49 @@ class MusicCog(commands.Cog, name="Музика"):
         else:
             await ctx.send("❌ Музика не на паузі.")
 
+    def _is_dj(self, ctx) -> bool:
+        """Чи має автор право вільно керувати музикою (DJ-роль/адмін, або DJ не задано)."""
+        return member_is_dj(ctx.author, settings.get(ctx.guild.id, "dj_role_id"))
+
+    def _try_skip(self, guild, voice, member) -> tuple[bool, str]:
+        """Спроба скіпу: (чи_скіпнути, повідомлення).
+
+        DJ/адмін (або коли DJ-роль не задано) скіпають миттєво. Інакше — голосування:
+        треба більшість слухачів у каналі. Голосувати може лише той, хто в каналі.
+        """
+        if member_is_dj(member, settings.get(guild.id, "dj_role_id")):
+            return True, "⏭️ Пропущено"
+        player = self.players.get(guild.id)
+        if player is None:
+            return False, "❌ Музика не відтворюється."
+        channel = voice.channel
+        if member not in channel.members:
+            return False, "❌ Щоб голосувати за скіп, зайди в голосовий канал бота."
+        listener_ids = {m.id for m in channel.members if not m.bot}
+        player.skip_votes.add(member.id)
+        votes = len(player.skip_votes & listener_ids)
+        needed = votes_needed(len(listener_ids))
+        if votes >= needed:
+            player.skip_votes.clear()
+            return True, "⏭️ Пропущено (голосування)"
+        return False, f"🗳️ Голос за скіп: **{votes}/{needed}**"
+
     @commands.hybrid_command(name="skip", aliases=["next", "s"])
     async def skip(self, ctx):
-        """Пропустити поточний трек."""
-        if ctx.voice_client and (ctx.voice_client.is_playing() or ctx.voice_client.is_paused()):
-            ctx.voice_client.stop()
-            await ctx.send("⏭️ Пропущено")
-        else:
-            await ctx.send("❌ Нічого не відтворюється.")
+        """Пропустити поточний трек (з DJ-роллю — голосуванням)."""
+        voice = ctx.voice_client
+        if not (voice and (voice.is_playing() or voice.is_paused())):
+            return await ctx.send("❌ Нічого не відтворюється.")
+        did_skip, msg = self._try_skip(ctx.guild, voice, ctx.author)
+        if did_skip:
+            voice.stop()
+        await ctx.send(msg)
 
     @commands.hybrid_command(name="stop")
     async def stop(self, ctx):
         """Зупинити і очистити чергу (бот лишається в каналі)."""
+        if not self._is_dj(ctx):
+            return await ctx.send("🔒 Лише DJ або адміністратор може зупиняти відтворення.")
         player = self.players.get(ctx.guild.id)
         if player:
             player.queue.clear()
@@ -1238,6 +1298,8 @@ class MusicCog(commands.Cog, name="Музика"):
     @commands.hybrid_command(name="remove", aliases=["rm"])
     async def remove(self, ctx, index: int):
         """Видалити трек із черги за номером (як у !queue)."""
+        if not self._is_dj(ctx):
+            return await ctx.send("🔒 Лише DJ або адміністратор може видаляти треки з черги.")
         player = self.players.get(ctx.guild.id)
         if not player or not player.queue:
             return await ctx.send("📭 Черга порожня.")
@@ -1249,6 +1311,8 @@ class MusicCog(commands.Cog, name="Музика"):
     @commands.hybrid_command(name="clear")
     async def clear(self, ctx):
         """Очистити чергу (поточний трек продовжує грати)."""
+        if not self._is_dj(ctx):
+            return await ctx.send("🔒 Лише DJ або адміністратор може очищати чергу.")
         player = self.players.get(ctx.guild.id)
         if not player or not player.queue:
             return await ctx.send("📭 Черга вже порожня.")
@@ -1303,6 +1367,36 @@ class MusicCog(commands.Cog, name="Музика"):
             await ctx.send(f"⏩ Перемотка на {m:02d}:{s:02d}")
         else:
             await ctx.send("❌ Не вдалося перемотати.")
+
+    @commands.hybrid_command(name="dj", aliases=["setdj"])
+    @commands.has_permissions(manage_guild=True)
+    async def dj(self, ctx, role: discord.Role = None):
+        """DJ-роль: лише вона (та адміни) керує музикою. Без аргументу — показати поточну."""
+        cur_id = settings.get(ctx.guild.id, "dj_role_id")
+        if role is None:
+            if cur_id:
+                r = ctx.guild.get_role(cur_id)
+                name = r.mention if r else f"`{cur_id}` (роль видалено?)"
+                return await ctx.send(
+                    f"🎧 Поточна DJ-роль: {name}\nЗняти: `{ctx.prefix}djclear`"
+                )
+            return await ctx.send(
+                f"🎧 DJ-роль не задано — музикою керують усі.\n"
+                f"Задати: `{ctx.prefix}dj @роль`"
+            )
+        settings.set(ctx.guild.id, "dj_role_id", role.id)
+        await ctx.send(
+            f"🎧 DJ-роль встановлено: {role.mention}.\n"
+            f"Тепер `skip` — голосуванням (більшість слухачів), а `stop`/`clear`/`remove` — "
+            f"лише DJ або адмін."
+        )
+
+    @commands.hybrid_command(name="djclear", aliases=["djoff"])
+    @commands.has_permissions(manage_guild=True)
+    async def dj_clear(self, ctx):
+        """Зняти DJ-роль (керування музикою знову доступне всім)."""
+        settings.set(ctx.guild.id, "dj_role_id", None)
+        await ctx.send("🎧 DJ-роль знято — музикою знову керують усі.")
 
 
 async def setup(bot):
