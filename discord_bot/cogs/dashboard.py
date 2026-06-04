@@ -185,7 +185,7 @@ function card(p){
      ${p.autoplay?'<span class="badge act">📻 autoplay</span>':''}
      <span class="badge">🔊 ${p.volume}%</span>
     </div>
-    <div class="bar" onclick="seekClick(event,'${p.guild_id}',${p.duration})"><div class="fill" id="fill_${p.guild_id}"></div></div>
+    <div class="bar" onclick="seekClick(event,'${p.guild_id}',${p.duration})"><div class="fill" id="fill_${p.guild_id}" style="width:${p.duration?Math.min(100,100*p.position/p.duration):0}%"></div></div>
     <div class="times"><span id="pos_${p.guild_id}">${fmt(p.position)}</span><span>${p.duration?fmt(p.duration):'—'}</span></div>
    </div></div>
 
@@ -268,6 +268,7 @@ async function refresh(){
   box.innerHTML=s.players.map(card).join('');
   last={};
   for(const p of s.players)last[p.guild_id]={pos:p.position,dur:p.duration,playing:p.playing,paused:p.paused,ts:Date.now()};
+  tick();
  }
  // бібліотека — рендеримо завжди; зберігаємо вибір цільового сервера
  const savedTarget=(document.getElementById('target')||{}).value;
