@@ -1,0 +1,24 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+      - name: Run tests
+        env:
+          # Тести не конектяться до Discord; токен лише щоб config.validate() не падав.
+          DISCORD_BOT_TOKEN: dummy_token_for_ci
+        run: python -m pytest -q

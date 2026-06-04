@@ -1,0 +1,28 @@
+# --- Секрети (НІКОЛИ не комітити) ---
+.env
+cookies.txt
+*.session
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# --- Дані бота (runtime) ---
+discord_bot/data/*.json
+discord_bot/data/*.log
+discord_bot/data/*.lock
+deploy/bot.log
+
+# --- Артефакти збірки PyInstaller ---
+build_gui/
+dist_gui/
+specs/*.spec
+specs/app_icon.ico
+
+# --- IDE ---
+.idea/
+
+# --- Випадкові скриншоти/нотатки в корені ---
+img.png

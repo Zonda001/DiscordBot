@@ -1,0 +1,6 @@
+discord.py>=2.3
+yt-dlp
+aiohttp
+PyNaCl
+python-dotenv
+requests
